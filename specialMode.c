@@ -29,6 +29,9 @@
 //  if PB1 is pressed longer than 5s then it resets the timer
 //  if PB1 is pressed less than 5s it will pause the timer
 
+#define LED_ON LATBbits.LATB8=1
+#define LED_OFF LATBbits.LATB8=0
+#define LED_BLINK LATBbits.LATB8^=1
 
 #define PB1 PORTAbits.RA2
 #define PB2 PORTAbits.RA4
@@ -40,92 +43,169 @@
 #define RESET_TIMER 3
 #define TOGGLE_START_PAUSE 4
 
-//These vars need to be integrated with the rest of the code:
-//extern uint8_t CNflag; // Global variable CNflag 
-//uint8_t state = DEFAULT; //current state variable, starts with default
+uint8_t state= SPECIAL_MODE;                  //Start in SPECIAL_MODE
+uint8_t count=3;                              //Multiple button push
+uint8_t CNflag=0;                             //CN interrupt flag
+uint8_t p1=1;                                 //PB1
+uint8_t p2=1;                                 //PB2
+uint8_t p3=1;                                 //PB3
+uint8_t first=1;                              //Used to determine first time in loop
 
 
-uint8_t seconds = 0; // Seconds counter
+uint8_t seconds = 0; // counts seconds on timer
+uint16_t seconds_counter = 0; //counter to see how long PB1 is pressed
 uint8_t start_pause = 0; // Toggles for start/pause function when PB1 pressed
 
-// this will need to be part of some central IOcheck function or the master while loop that checks all the other states outside of the SPECIAL_MODE
+void IOcheck(void) {
+    //read all values
+    delay_ms2(50);                        //delay that cant be interrupted by PB press for proper de-bounce
+    p1=PB1;
+    p2=PB2;
+    p3=PB3;
+    count=p1+p2+p3;                      //Used to see if multiple push buttons are pressed
+    while (p1 == 0) // While PB1 pressed 
+    {
+        seconds_counter = seconds_counter + 1; // Count the seconds PB1 is being pressed
+
+        if ((p1 == 1) && (seconds_counter  < 5))  // If PB1 is pressed for less than 5s
+        { 
+
+            if (start_pause == 0) // Toggle each time PB1 is pressed for less than 5s (one for start, one for pause)
+            {
+                start_pause = 1;
+            }
+            else
+            {
+                start_pause = 0;   
+            }
+        }
+    }    
+}
+
+
+// this will need to be part of the master while loop that checks all the other states outside of the SPECIAL_MODE
 void specialModeFunc(void)
 {
-    
-    
-    while (state == SPECIAL_MODE ) 
-    {  
-        Disp2Dec("ENTERED SPECIAL MODE"); //prints message
-        XmitUART2('\r', 1); // next line
-        
-        if (state == IDLE_STATE) // No PBs are pressed
-        {       
-            LATBbits.LATB8 = 0; // LED Off
-            Idle(); // Save power
-        }
+   while(1){ 
+    //Pressing PB3 will make system enter special mode.
+        while (state == SPECIAL_MODE ) 
+        {  
+            LED_OFF;
 
-        
-        else if (state == SET_TIMER) // PB2 pressed
-        {
-            seconds = seconds + 1; // Increment seconds
-            if (seconds > 59) // No more than 59 seconds in one minute
-            {
-                seconds = 59; // Seconds can't go over 59, set back to 59
-                state = IDLE_STATE; // Back to initial state, Led Off and Idle
+            if(first==1){
+                Disp2Dec("ENTERED SPECIAL MODE"); //prints message
+                XmitUART2('\r', 1); // next line
+                first=0;//clears first since it is no longer the first cycle
             }
-            // Display seconds increment when pressing PB2
+            Idle(); //Wait for interrupt
+            IOcheck();//Check IO
+
+            if(p2==0 && count==2){ //If PB2 is pressed
+                first=1;
+                state=SET_TIMER;
+            }
             
-            Disp2Dec(seconds); //prints "seconds s"
-            Disp2String(" s");
-            XmitUART2('\r', 1); // next line
+            else if(p1==0 && count==2){ //If PB1 is pressed
+                if(p1==1 && seconds_counter>=5){ //PB1 is pressed for 5s or more
+                    first=1;
+                    state= RESET_TIMER;
+                }
 
-            if(PORTBbits.RA4 == 1) // PB2 no longer being pressed
-            {
-                state = IDLE_STATE; // Back to initial state, Led Off and Idle
+                else if(p1==1 && seconds_counter<5){ //PB1 is pressed for less than 5s
+                    first=1;
+                    state= TOGGLE_START_PAUSE;
+                }
+            }
+        }    
 
+
+        while (state == SET_TIMER) // PB2 pressed
+        {
+            if(first==1){
+                seconds = seconds + 1; // Increment seconds
+                first=0;
+                if (seconds > 59) // No more than 59 seconds in one minute
+                {
+                    seconds = 59; // Seconds can't go over 59, set back to 59
+                }
+                // Display seconds increment when pressing PB2
+
+                Disp2Dec(seconds); //prints "seconds s"
+                Disp2String(" s");
+                XmitUART2('\r', 1); // next line
+            }
+            Idle();                           //Wait for interrupt
+            if(CNflag==1){
+                CNflag=0;                     //clear flag
+                IOcheck();                    //Update IO read  
+                if(p2==0){                    //check for PB2
+                    first=1;                  //Makes it so the first if statement is read again in SPECIAL_MODE
+                    state=SPECIAL_MODE;       //switch states
+                }
             }
         }
 
-        else if (state == RESET_TIMER) // PB1 pressed for more than 5s
-        {
-           // Display reseted timer
+        while (state == RESET_TIMER) // PB1 pressed for more than 5s
+        {   
+            if(first==1){
+            first=0;
+            // Display reseted timer
             Disp2String("00s\r"); // Reset timer 
             seconds = 0; // Reset seconds
             start_pause = 0; // Initialize timer again (paused state)
-            state = IDLE_STATE; // Back to initial state, Led Off and Idle
+            }
+            
+            Idle();                           //Wait for interrupt
+            if(CNflag==1){
+                CNflag=0;                     //clear flag
+                IOcheck();                    //Update IO read  
+                if(p1==0){                    //check for PB1
+                    first=1;                  //Makes it so the first if statement is read again in SPECIAL_MODE
+                    state=SPECIAL_MODE;       //switch states
+                }
+            }
 
         }
 
 
-        else if (state == TOGGLE_START_PAUSE) // PB1 pressed for less than 5s
+        while (state == TOGGLE_START_PAUSE) // PB1 pressed for less than 5s
         {
-
-            if (start_pause == 1) // If start 
-            {
-                // 0.5s delay blinking in LED
-                LATBbits.LATB8 = 1;  // LED On
-                delay_ms(500); // Calling delay_ms function in timeDelay.c with 
-                LATBbits.LATB8 = 0;  // LED Off
-                delay_ms(500); // Calling delay_ms function in timeDelay.c with 
-
-
-                // Displaying Countdown
-                XmitUART2('\r', 1); // next line
-                //prints "seconds s"
-                Disp2Dec(seconds);
-                Disp2String(" s");
-                XmitUART2('\r', 1); // next line
-                
-
-                if (start_pause == 0) // If paused
+            if(first==1){
+                first= 0;
+                if (start_pause == 1) // If start 
                 {
-                    pb_state = 0; // Back to initial state, Led Off and Idle
+                    // 0.5s delay blinking in LED
+                    LED_ON;
+                    delay_ms(500); // Calling delay_ms function in timeDelay.c with 
+                    LED_OFF;  // LED Off
+                    delay_ms(500); // Calling delay_ms function in timeDelay.c with 
 
+                    // Displaying Countdown
+                    XmitUART2('\r', 1); // next line
+                    //prints "seconds s"
+                    Disp2Dec(seconds);
+                    Disp2String(" s");
+                    XmitUART2('\r', 1); // next line
+
+                    if (start_pause == 0) // If paused
+                    {
+                       state = SPECIAL_MODE; // Back to initial state, Led Off and Idle
+
+                    }
+            
                 }
-
+            }
+            
+            Idle();                           //Wait for interrupt
+            if(CNflag==1){
+                CNflag=0;                     //clear flag
+                IOcheck();                    //Update IO read  
+                if(p1==0){                    //check for PB1
+                    first=1;                  //Makes it so the first if statement is read again in SPECIAL_MODE
+                    state=SPECIAL_MODE;       //switch states
+                }
             }
         }
-    }
      return;
 }  
         
@@ -133,72 +213,10 @@ void specialModeFunc(void)
 void __attribute__((interrupt, no_auto_psv))_CNInterrupt(void)
 {
   
-    if(IFS1bits.CNIF ==1){  
-        
-        
-        uint16_t seconds_counter = 0; //counter to see how long PB1 is pressed
-
-        if((PORTAbits.RA2 == 1) && (PORTBbits.RB4 == 0) && (PORTAbits.RA4 == 1)) // PB3 pressed
-        {
-            state = SPECIAL_MODE; //enter special mode
-        }
-            
-        else if ((PORTAbits.RA2 == 1) && (PORTBbits.RB4 == 1) && (PORTAbits.RA4 == 0)) // PB2 pressed
-        {
-            state = SET_TIMER; //set timer to count from 0 to 60 sec
-        }
-        
-        while ((PORTAbits.RA2 == 0) && (PORTBbits.RB4 == 1) && (PORTAbits.RA4 == 1)) // While PB1 pressed 
-        {
-              
-            seconds_counter = seconds_counter + 1; // Count the seconds PB1 is being pressed
-                                   
-                
-            if ((PORTAbits.RA2 == 1) && (seconds_counter >= 5)) // If PB1 is pressed for more than 5s
-          
-            {
-              state = RESET_TIMER; 
-                   
-            } 
-                
-            else if ((PORTAbits.RA2 == 1) && (seconds_counter  < 5))  // If PB1 is pressed for less than 5s
-            { 
- 
-                if (start_pause == 0) // Toggle each time PB1 is pressed for less than 5s (one for start, one for pause)
-                {
-                    start_pause = 1;
-
-                    XmitUART2('\r', 1);   
-                    Disp2String("Start timer"); // Displays message
-                    XmitUART2('\r', 1); // next line
-                    XmitUART2(' ', 10);  // spaces                         
-                    XmitUART2('\r', 1); // next line
-
-                    state = TOGGLE_START_PAUSE; // PB1 pressed for less than 5s
-
-                }
-                else
-                {
-
-                    start_pause = 0;
-
-                    XmitUART2('\r', 1);
-                    Disp2String("Stop timer"); // Displays message
-                    XmitUART2('\r', 1); // next line
-                    XmitUART2(' ', 10);    //spaces   
-                    XmitUART2('\r', 1);  // next line
-
-                    state = IDLE_STATE;// Back to initial state after timer being paused
-
-                }
-                 
-            }
-  
-        }
-  
-         
+    if(PB1==0||PB2==0||PB3==0){//any press of a button will set the flag
+        CNflag=1;
     }
-    
-    IFS1bits.CNIF = 0;  // Clear IF flag
+    IFS1bits.CNIF = 0; // clear IF flag
+    return;
 
 }
