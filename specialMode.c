@@ -24,9 +24,9 @@
 //Special mode needs to be integrated with the rest of the code
 
 // From the unlocked state special mode is entered when PB3 is pressed
-// Once in special mode, pressing PB2 sets the timer. It can count from 0 to 59 seconds. During the count down the LED blinks at 0.5s interval.
+// Once in special mode, pressing PB2 sets a timer. It can count from 0 to 59 seconds. While the timer is running the LED blinks at a 0.5s interval and it increments by seconds.
 // After timer is set: if PB1 is pressed less than 5s it will start/pause the timer
-//  if PB1 is pressed longer than 5s then it resets the timer
+// If PB1 is pressed longer than 5s then it resets the timer
 
 #define LED_ON LATBbits.LATB8=1
 #define LED_OFF LATBbits.LATB8=0
@@ -37,12 +37,11 @@
 #define PB3 PORTBbits.RB4
 
 #define SPECIAL_MODE 0
-#define IDLE_STATE 1
-#define SET_TIMER 2
-#define RESET_TIMER 3
-#define TOGGLE_START_PAUSE 4
+#define SET_TIMER 1
+#define RESET_TIMER 2
+#define TOGGLE_START_PAUSE 3
 
-uint8_t state= SPECIAL_MODE;                  //Start in SPECIAL_MODE
+uint8_t state= SPECIAL_MODE;                  //Assumed start in SPECIAL_MODE
 uint8_t count=3;                              //Multiple button push
 uint8_t CNflag=0;                             //CN interrupt flag
 uint8_t p1=1;                                 //PB1
