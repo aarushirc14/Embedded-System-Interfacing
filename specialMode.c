@@ -25,9 +25,8 @@
 
 // From the unlocked state special mode is entered when PB3 is pressed
 // Once in special mode, pressing PB2 sets the timer. It can count from 0 to 59 seconds. During the count down the LED blinks at 0.5s interval.
-// After timer is set: 
+// After timer is set: if PB1 is pressed less than 5s it will start/pause the timer
 //  if PB1 is pressed longer than 5s then it resets the timer
-//  if PB1 is pressed less than 5s it will pause the timer
 
 #define LED_ON LATBbits.LATB8=1
 #define LED_OFF LATBbits.LATB8=0
@@ -127,6 +126,7 @@ void specialModeFunc(void)
                 if (seconds > 59) // No more than 59 seconds in one minute
                 {
                     seconds = 59; // Seconds can't go over 59, set back to 59
+                    Disp2String("Timer Max Reached.");
                 }
                 // Display seconds increment when pressing PB2
 
@@ -174,7 +174,7 @@ void specialModeFunc(void)
                 first= 0;
                 if (start_pause == 1) // If start 
                 {
-                    // 0.5s delay blinking in LED
+                    // Blink LED every 0.5s while counting
                     LED_ON;
                     delay_ms(500); // Calling delay_ms function in timeDelay.c with 
                     LED_OFF;  // LED Off
